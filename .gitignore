@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# VS Code
+.vscode/
+
+# Devcontainer (optional)
+.devcontainer/
+
+# Home Assistant / secrets
+*.log
+.env
+secrets.yaml
