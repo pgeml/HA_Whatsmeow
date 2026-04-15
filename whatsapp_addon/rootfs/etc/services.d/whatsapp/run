@@ -1,0 +1,32 @@
+#!/usr/bin/with-contenv bashio
+set -euo pipefail
+
+bashio::log.info "Installing Home Assistant custom component: whatsapp"
+
+# Debug: prove what /config is and whether it's writable
+bashio::log.info "Debug: /config contents before install:"
+ls -la /config || true
+
+# Ensure correct HA structure
+mkdir -p /config/custom_components/whatsapp
+
+# Install/refresh component directly into /config/custom_components/whatsapp
+rm -rf /config/custom_components/whatsapp/*
+cp -a /custom_component/* /config/custom_components/whatsapp/
+
+bashio::log.info "Debug: /config/custom_components/whatsapp after install:"
+ls -la /config/custom_components/whatsapp || true
+
+# Replace placeholder with the add-on hostname so HA can reach the container by name.
+if [ -f /config/custom_components/whatsapp/whatsapp.py ]; then
+  sed -i "s/{{HOSTNAME}}/${HOSTNAME}/g" /config/custom_components/whatsapp/whatsapp.py
+fi
+
+bashio::log.info "Starting WhatsApp backend (whatsmeow)"
+export LOG_LEVEL="$(bashio::config 'log_level')"
+export STORE_PATH="/data/store.db"
+
+# clients option is kept for compatibility; backend supports multiple sessions.
+export CLIENT_IDS="$(bashio::config 'clients' | tr -d '[]\" ' | tr ',' ';')"
+
+exec /usr/local/bin/whatsapp-addon

@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bashio
+set +e
+bashio::log.info "Stopping: leaving custom component installed (so HA doesn't break on restart)."

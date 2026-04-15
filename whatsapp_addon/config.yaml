@@ -1,0 +1,38 @@
+name: Whatsapp
+version: "2.0.0"
+slug: whatsapp_addon
+description: Whatsapp add-on for sending messages from Home Assistant (whatsmeow / Multi-Device)
+url: "https://github.com/YOUR_GITHUB_USER/hassio-addon-whatsmeow"
+
+homeassistant_api: true
+hassio_api: true
+
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+
+init: false
+startup: services
+boot: auto
+
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:whatsapp
+
+map:
+  - config:rw
+  - data:rw
+  - media:ro
+
+options:
+  clients:
+    - default
+  log_level: info
+
+schema:
+  clients:
+    - str
+  log_level: list(trace|debug|info|warning|error)

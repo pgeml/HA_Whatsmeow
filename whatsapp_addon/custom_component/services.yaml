@@ -1,0 +1,159 @@
+send_message:
+  name: Send message
+  description: Send a Whatsapp message
+  fields:
+    clientId:
+      name: Client ID
+      required: true
+      example: default
+    to:
+      name: Target JID
+      required: true
+      example: 391234567890@s.whatsapp.net
+    body:
+      name: Body
+      required: true
+      advanced: true
+      example:
+        text: Hello!
+
+set_status:
+  name: Set status
+  description: Sets the current user's status message
+  fields:
+    clientId:
+      name: Client ID
+      required: true
+      example: default
+    status:
+      name: New status message
+      required: true
+      example: Available
+
+presence_subscribe:
+  name: Presence subscribe
+  description: Subscribe to user presence updates
+  fields:
+    clientId:
+      name: Client ID
+      required: true
+      example: default
+    userId:
+      name: Target JID
+      required: true
+      example: 391234567890@s.whatsapp.net
+
+send_presence_update:
+  name: Send presence update
+  description: Send global presence update (available/unavailable)
+  fields:
+    clientId:
+      name: Client ID
+      required: true
+      example: default
+    type:
+      name: Presence type
+      required: true
+      selector:
+        select:
+          options:
+            - "unavailable"
+            - "available"
+    to:
+      name: Target JID (ignored by backend, kept for compatibility)
+      required: false
+      example: 391234567890@s.whatsapp.net
+
+send_infinity_presence_update:
+  name: Send infinity presence update
+  description: Compatibility alias for send_presence_update
+  fields:
+    clientId:
+      name: Client ID
+      required: true
+      example: default
+    type:
+      name: Presence type
+      required: true
+      selector:
+        select:
+          options:
+            - "unavailable"
+            - "available"
+    to:
+      name: Target JID (ignored by backend, kept for compatibility)
+      required: false
+      example: 391234567890@s.whatsapp.net
+
+# -------------------------
+# NEW MEDIA SERVICES
+# -------------------------
+
+send_image:
+  name: Send image
+  description: Send an image by URL or base64
+  fields:
+    clientId:
+      required: true
+      example: default
+    to:
+      required: true
+      example: 120363171536423506@g.us
+    body:
+      required: true
+      advanced: true
+      example:
+        url: "https://example.com/image.jpg"
+        caption: "Hello"
+
+send_video:
+  name: Send video
+  description: Send a video by URL or base64
+  fields:
+    clientId:
+      required: true
+      example: default
+    to:
+      required: true
+      example: 120363171536423506@g.us
+    body:
+      required: true
+      advanced: true
+      example:
+        url: "https://example.com/video.mp4"
+        caption: "Hello"
+
+send_document:
+  name: Send document
+  description: Send a document by URL or base64
+  fields:
+    clientId:
+      required: true
+      example: default
+    to:
+      required: true
+      example: 120363171536423506@g.us
+    body:
+      required: true
+      advanced: true
+      example:
+        url: "https://example.com/file.pdf"
+        filename: "file.pdf"
+        caption: "FYI"
+
+send_audio:
+  name: Send audio
+  description: Send audio by URL or base64 (ptt=true for voice note)
+  fields:
+    clientId:
+      required: true
+      example: default
+    to:
+      required: true
+      example: 120363171536423506@g.us
+    body:
+      required: true
+      advanced: true
+      example:
+        url: "https://example.com/audio.ogg"
+        ptt: true

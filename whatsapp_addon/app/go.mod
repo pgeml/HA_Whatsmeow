@@ -1,0 +1,12 @@
+module github.com/youruser/whatsapp_addon
+
+go 1.25.0
+toolchain go1.25.5
+
+require (
+    github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+    modernc.org/sqlite v1.34.0
+    go.mau.fi/whatsmeow v0.0.0
+)
+
+replace go.mau.fi/whatsmeow => ./whatsmeow
