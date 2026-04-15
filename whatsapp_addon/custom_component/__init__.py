@@ -63,14 +63,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         except Exception as e:
             _LOGGER.exception("WhatsApp service %s exception: %s", service_name, e)
 
-    # Text + status
+    # Text
     hass.services.async_register(DOMAIN, "send_message", lambda call: _call("send_message", "send_message", call))
-    hass.services.async_register(DOMAIN, "set_status", lambda call: _call("set_status", "set_status", call))
-
-    # Presence
-    hass.services.async_register(DOMAIN, "presence_subscribe", lambda call: _call("presence_subscribe", "presence_subscribe", call))
-    hass.services.async_register(DOMAIN, "send_presence_update", lambda call: _call("send_presence_update", "send_presence_update", call))
-    hass.services.async_register(DOMAIN, "send_infinity_presence_update", lambda call: _call("send_infinity_presence_update", "send_infinity_presence_update", call))
 
     # Media
     hass.services.async_register(DOMAIN, "send_image", lambda call: _call("send_image", "send_image", call))

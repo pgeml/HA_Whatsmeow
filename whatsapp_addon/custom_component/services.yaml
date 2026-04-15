@@ -17,81 +17,13 @@ send_message:
       example:
         text: Hello!
 
-set_status:
-  name: Set status
-  description: Sets the current user's status message
-  fields:
-    clientId:
-      name: Client ID
-      required: true
-      example: default
-    status:
-      name: New status message
-      required: true
-      example: Available
-
-presence_subscribe:
-  name: Presence subscribe
-  description: Subscribe to user presence updates
-  fields:
-    clientId:
-      name: Client ID
-      required: true
-      example: default
-    userId:
-      name: Target JID
-      required: true
-      example: 391234567890@s.whatsapp.net
-
-send_presence_update:
-  name: Send presence update
-  description: Send global presence update (available/unavailable)
-  fields:
-    clientId:
-      name: Client ID
-      required: true
-      example: default
-    type:
-      name: Presence type
-      required: true
-      selector:
-        select:
-          options:
-            - "unavailable"
-            - "available"
-    to:
-      name: Target JID (ignored by backend, kept for compatibility)
-      required: false
-      example: 391234567890@s.whatsapp.net
-
-send_infinity_presence_update:
-  name: Send infinity presence update
-  description: Compatibility alias for send_presence_update
-  fields:
-    clientId:
-      name: Client ID
-      required: true
-      example: default
-    type:
-      name: Presence type
-      required: true
-      selector:
-        select:
-          options:
-            - "unavailable"
-            - "available"
-    to:
-      name: Target JID (ignored by backend, kept for compatibility)
-      required: false
-      example: 391234567890@s.whatsapp.net
-
 # -------------------------
 # NEW MEDIA SERVICES
 # -------------------------
 
 send_image:
   name: Send image
-  description: Send an image by URL or base64
+  description: Send an image from a remote URL
   fields:
     clientId:
       required: true
@@ -105,10 +37,11 @@ send_image:
       example:
         url: "https://example.com/image.jpg"
         caption: "Hello"
+        mimeType: "image/jpeg"
 
 send_video:
   name: Send video
-  description: Send a video by URL or base64
+  description: Send a video from a remote URL
   fields:
     clientId:
       required: true
@@ -122,10 +55,11 @@ send_video:
       example:
         url: "https://example.com/video.mp4"
         caption: "Hello"
+        mimeType: "video/mp4"
 
 send_document:
   name: Send document
-  description: Send a document by URL or base64
+  description: Send a document from a remote URL
   fields:
     clientId:
       required: true
@@ -138,12 +72,13 @@ send_document:
       advanced: true
       example:
         url: "https://example.com/file.pdf"
-        filename: "file.pdf"
+        fileName: "file.pdf"
         caption: "FYI"
+        mimeType: "application/pdf"
 
 send_audio:
   name: Send audio
-  description: Send audio by URL or base64 (ptt=true for voice note)
+  description: Send audio from a remote URL (set ptt=true for a voice note)
   fields:
     clientId:
       required: true
@@ -157,3 +92,4 @@ send_audio:
       example:
         url: "https://example.com/audio.ogg"
         ptt: true
+        mimeType: "audio/ogg"
