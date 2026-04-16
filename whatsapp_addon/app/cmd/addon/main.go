@@ -485,6 +485,13 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("send%s: fetch url=%q returned status=%d", strings.Title(kind), req.Body.URL, resp.StatusCode)
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(statusKo))
+		return
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("send%s: read body failed err=%v", strings.Title(kind), err)
