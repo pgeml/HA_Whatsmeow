@@ -47,6 +47,11 @@ const (
 	statusKo = "KO"
 )
 
+func writeKO(w http.ResponseWriter, status int, reason string) {
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(statusKo + ": " + reason))
+}
+
 type clientWrap struct {
 	id     string
 	cli    *whatsmeow.Client
@@ -153,24 +158,21 @@ func main() {
 		var req sendTextReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			log.Printf("sendMessage: bad json: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(statusKo))
+			writeKO(w, http.StatusBadRequest, "bad json")
 			return
 		}
 
 		c := m.mustClient(req.ClientID)
 		if c == nil {
 			log.Printf("sendMessage: unknown clientId=%q", req.ClientID)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(statusKo))
+			writeKO(w, http.StatusBadRequest, "unknown clientId")
 			return
 		}
 
 		jid, err := parseJID(req.To)
 		if err != nil {
 			log.Printf("sendMessage: bad to=%q err=%v", req.To, err)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(statusKo))
+			writeKO(w, http.StatusBadRequest, "bad to")
 			return
 		}
 
@@ -178,8 +180,7 @@ func main() {
 		_, err = c.cli.SendMessage(context.Background(), jid, msg)
 		if err != nil {
 			log.Printf("sendMessage failed: clientId=%s to=%s err=%v", req.ClientID, req.To, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(statusKo))
+			writeKO(w, http.StatusInternalServerError, "send failed")
 			return
 		}
 
@@ -447,56 +448,49 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 	var req sendMediaReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("send%s: bad json: %v", strings.Title(kind), err)
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadRequest, "bad json")
 		return
 	}
 
 	cw := m.mustClient(req.ClientID)
 	if cw == nil {
 		log.Printf("send%s: unknown clientId=%q", strings.Title(kind), req.ClientID)
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadRequest, "unknown clientId")
 		return
 	}
 
 	jid, err := parseJID(req.To)
 	if err != nil {
 		log.Printf("send%s: bad to=%q err=%v", strings.Title(kind), req.To, err)
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadRequest, "bad to")
 		return
 	}
 
 	u, err := url.Parse(req.Body.URL)
 	if err != nil || u.Scheme == "" {
 		log.Printf("send%s: bad url=%q err=%v", strings.Title(kind), req.Body.URL, err)
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadRequest, "bad url")
 		return
 	}
 
 	resp, err := http.Get(req.Body.URL) // #nosec G107
 	if err != nil {
 		log.Printf("send%s: failed to fetch url=%q err=%v", strings.Title(kind), req.Body.URL, err)
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadGateway, "fetch failed")
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("send%s: fetch url=%q returned status=%d", strings.Title(kind), req.Body.URL, resp.StatusCode)
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadGateway, fmt.Sprintf("upstream returned %d", resp.StatusCode))
 		return
 	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("send%s: read body failed err=%v", strings.Title(kind), err)
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusBadGateway, "read body failed")
 		return
 	}
 
@@ -520,8 +514,7 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 	up, err := cw.cli.Upload(context.Background(), data, whatsmeow.MediaType(kind))
 	if err != nil {
 		log.Printf("send%s: upload failed err=%v", strings.Title(kind), err)
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusInternalServerError, "upload failed")
 		return
 	}
 
@@ -592,8 +585,7 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 	_, err = cw.cli.SendMessage(context.Background(), jid, msg)
 	if err != nil {
 		log.Printf("send%s failed: clientId=%s to=%s err=%v", strings.Title(kind), req.ClientID, req.To, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(statusKo))
+		writeKO(w, http.StatusInternalServerError, "send failed")
 		return
 	}
 
