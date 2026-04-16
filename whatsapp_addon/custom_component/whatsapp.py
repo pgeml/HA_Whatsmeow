@@ -1,13 +1,22 @@
 import requests
 from url_normalize import url_normalize
 
+class WhatsappRequestError(Exception):
+    def __init__(self, path, status_code, body_text):
+        self.path = path
+        self.status_code = status_code
+        self.body_text = body_text
+        super().__init__(f"POST {path} failed: status={status_code} body={body_text!r}")
+
 class Whatsapp:
     def __init__(self, host="127.0.0.1", port=3000):
         self._base = f"http://{host}:{port}"
 
     def _post_ok(self, path, data):
         r = requests.post(url_normalize(f"{self._base}{path}"), json=data, timeout=60)
-        return r.content == b"OK"
+        if r.content == b"OK":
+            return True
+        raise WhatsappRequestError(path, r.status_code, r.text.strip())
 
     def send_message(self, data):
         return self._post_ok("/sendMessage", data)

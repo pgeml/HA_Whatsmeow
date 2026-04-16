@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
 
-from .whatsapp import Whatsapp
+from .whatsapp import Whatsapp, WhatsappRequestError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +60,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             ok = await hass.async_add_executor_job(getattr(api, func_name), payload)
             if not ok:
                 _LOGGER.error("WhatsApp service %s failed (payload keys=%s)", service_name, list(payload.keys()))
+        except WhatsappRequestError as e:
+            _LOGGER.error(
+                "WhatsApp service %s failed: endpoint=%s status=%s body=%r",
+                service_name,
+                e.path,
+                e.status_code,
+                e.body_text,
+            )
         except Exception as e:
             _LOGGER.exception("WhatsApp service %s exception: %s", service_name, e)
 
