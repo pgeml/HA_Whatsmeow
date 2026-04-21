@@ -2,7 +2,7 @@ name: Whatsapp
 version: "2.0.0"
 slug: whatsapp_addon
 description: Whatsapp add-on for sending messages from Home Assistant (whatsmeow / Multi-Device)
-url: "https://github.com/YOUR_GITHUB_USER/hassio-addon-whatsmeow"
+url: "https://github.com/pgeml/HA_Whatsmeow"
 
 homeassistant_api: true
 hassio_api: true
