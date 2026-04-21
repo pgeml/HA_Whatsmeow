@@ -92,4 +92,4 @@ send_audio:
       example:
         url: "/media/example.ogg"
         ptt: true
-        mimeType: "audio/ogg"
+        mimeType: "audio/ogg; codecs=opus"
