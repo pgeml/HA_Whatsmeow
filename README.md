@@ -2,6 +2,7 @@
 
 Drop-in replacement for the community `whatsapp_addon` that relied on Baileys/WhatsApp Web.
 This add-on uses **whatsmeow** (WhatsApp Multi-Device protocol) for improved stability.
+Original project code in this repository is MIT-licensed; vendored code under `whatsapp_addon/app/whatsmeow/` remains MPL-2.0.
 
 ## What you get
 - QR login via Add-on UI (Ingress)
