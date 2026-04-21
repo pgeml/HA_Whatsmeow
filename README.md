@@ -131,3 +131,14 @@ Known limits:
 - To reset the session, stop the add-on and delete `/data/store.db`, then start again.
 - If local media paths fail, rebuild/restart the add-on so the latest backend is running.
 - If remote media returns `403` or `404`, the remote host is rejecting or missing the file rather than the add-on failing to send.
+
+## Licensing And Attribution
+This repository contains a mix of original project code and vendored third-party code.
+
+- The root project is licensed under the terms in [LICENSE](LICENSE).
+- Vendored code under `whatsapp_addon/app/whatsmeow/` is derived from
+  [tulir/whatsmeow](https://github.com/tulir/whatsmeow) and remains licensed under MPL-2.0.
+- The vendored `whatsmeow` license text is included at
+  [whatsapp_addon/app/whatsmeow/LICENSE](whatsapp_addon/app/whatsmeow/LICENSE).
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for a short third-party attribution summary.
