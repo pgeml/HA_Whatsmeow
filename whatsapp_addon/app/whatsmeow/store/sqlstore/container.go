@@ -249,6 +249,7 @@ func (c *Container) PutDevice(ctx context.Context, device *store.Device) error {
 	if device.ID == nil {
 		return ErrDeviceIDMustBeSet
 	}
+	deviceJID := device.ID.String()
 	_, err := c.db.Exec(ctx, insertDeviceQuery,
 		device.ID, device.LID, device.RegistrationID, device.NoiseKey.Priv[:], device.IdentityKey.Priv[:],
 		device.SignedPreKey.Priv[:], device.SignedPreKey.KeyID, device.SignedPreKey.Signature[:],
@@ -258,6 +259,10 @@ func (c *Container) PutDevice(ctx context.Context, device *store.Device) error {
 	)
 
 	if !device.Initialized {
+		c.initializeDevice(device)
+	} else if sqlStore, ok := device.Identities.(*SQLStore); ok && sqlStore.JID != deviceJID {
+		// During first-time pairing, the device may be initialized before its JID is known.
+		// Rebind the session-scoped stores once the real JID has been assigned.
 		c.initializeDevice(device)
 	}
 	return err

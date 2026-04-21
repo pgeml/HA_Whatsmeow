@@ -18,9 +18,11 @@ bashio::log.info "Debug: /config/custom_components/whatsapp after install:"
 ls -la /config/custom_components/whatsapp || true
 
 # Replace placeholder with the add-on hostname so HA can reach the container by name.
-if [ -f /config/custom_components/whatsapp/whatsapp.py ]; then
-  sed -i "s/{{HOSTNAME}}/${HOSTNAME}/g" /config/custom_components/whatsapp/whatsapp.py
-fi
+for file in /config/custom_components/whatsapp/whatsapp.py /config/custom_components/whatsapp/__init__.py; do
+  if [ -f "$file" ]; then
+    sed -i "s/{{HOSTNAME}}/${HOSTNAME}/g" "$file"
+  fi
+done
 
 bashio::log.info "Starting WhatsApp backend (whatsmeow)"
 export LOG_LEVEL="$(bashio::config 'log_level')"

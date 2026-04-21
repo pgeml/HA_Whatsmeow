@@ -18,7 +18,7 @@ CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
-                vol.Optional(CONF_HOST, default="127.0.0.1"): cv.string,
+                vol.Optional(CONF_HOST, default="{{HOSTNAME}}"): cv.string,
                 vol.Optional(CONF_PORT, default=3000): cv.port,
             }
         )
@@ -29,11 +29,20 @@ CONFIG_SCHEMA = vol.Schema(
 def _payload(call: ServiceCall) -> dict:
     # Map HA service data -> backend payload keys
     data = dict(call.data)
+    body = data.get("body", {})
+    if not isinstance(body, dict):
+        body = {}
+
+    # Keep the existing YAML contract (`body.text`) but also accept top-level `text`
+    # so automations can be simpler without breaking older configs.
+    if "text" in data and "text" not in body:
+        body = {**body, "text": data.get("text", "")}
+
     # Normalize keys (keep your existing naming)
     payload = {
         "clientId": data.get("clientId", "default"),
         "to": data.get("to", ""),
-        "body": data.get("body", {}),
+        "body": body,
     }
     # Some services use different key
     if call.service == "set_status":
@@ -49,7 +58,7 @@ def _payload(call: ServiceCall) -> dict:
     return payload
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    host = config.get(DOMAIN, {}).get(CONF_HOST, "127.0.0.1")
+    host = config.get(DOMAIN, {}).get(CONF_HOST, "{{HOSTNAME}}")
     port = config.get(DOMAIN, {}).get(CONF_PORT, 3000)
 
     api = Whatsapp(host=host, port=port)
@@ -71,13 +80,28 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         except Exception as e:
             _LOGGER.exception("WhatsApp service %s exception: %s", service_name, e)
 
+    async def handle_send_message(call: ServiceCall) -> None:
+        await _call("send_message", "send_message", call)
+
+    async def handle_send_image(call: ServiceCall) -> None:
+        await _call("send_image", "send_image", call)
+
+    async def handle_send_video(call: ServiceCall) -> None:
+        await _call("send_video", "send_video", call)
+
+    async def handle_send_document(call: ServiceCall) -> None:
+        await _call("send_document", "send_document", call)
+
+    async def handle_send_audio(call: ServiceCall) -> None:
+        await _call("send_audio", "send_audio", call)
+
     # Text
-    hass.services.async_register(DOMAIN, "send_message", lambda call: _call("send_message", "send_message", call))
+    hass.services.async_register(DOMAIN, "send_message", handle_send_message)
 
     # Media
-    hass.services.async_register(DOMAIN, "send_image", lambda call: _call("send_image", "send_image", call))
-    hass.services.async_register(DOMAIN, "send_video", lambda call: _call("send_video", "send_video", call))
-    hass.services.async_register(DOMAIN, "send_document", lambda call: _call("send_document", "send_document", call))
-    hass.services.async_register(DOMAIN, "send_audio", lambda call: _call("send_audio", "send_audio", call))
+    hass.services.async_register(DOMAIN, "send_image", handle_send_image)
+    hass.services.async_register(DOMAIN, "send_video", handle_send_video)
+    hass.services.async_register(DOMAIN, "send_document", handle_send_document)
+    hass.services.async_register(DOMAIN, "send_audio", handle_send_audio)
 
     return True

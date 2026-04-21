@@ -4,22 +4,20 @@ import (
 	"bytes"
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -28,6 +26,8 @@ import (
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
+	"github.com/hajimehoshi/go-mp3"
+	"github.com/jfreymuth/oggvorbis"
 	rscqr "rsc.io/qr"
 
 	"go.mau.fi/whatsmeow"
@@ -39,6 +39,9 @@ import (
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"google.golang.org/protobuf/proto"
 
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	_ "modernc.org/sqlite"
 )
 
@@ -116,16 +119,33 @@ func main() {
 
 	logger := waLog.Stdout("whatsapp-addon", "INFO", true)
 
-	// Whatsmeow store (SQLite, pure-go)
-	dbPath := "/data/whatsmeow.db"
-	if v := os.Getenv("WHATSAPP_DB"); v != "" {
+	// Whatsmeow store (SQLite, pure-go).
+	// Prefer STORE_PATH from the add-on run script, but keep WHATSAPP_DB for compatibility.
+	dbPath := "/data/store.db"
+	if v := strings.TrimSpace(os.Getenv("STORE_PATH")); v != "" {
+		dbPath = v
+	} else if v := strings.TrimSpace(os.Getenv("WHATSAPP_DB")); v != "" {
 		dbPath = v
 	}
 	_ = os.MkdirAll(filepath.Dir(dbPath), 0o755)
+	log.Printf("using sqlite store at %s", dbPath)
 
-	// NEWER whatsmeow requires context here
-	storeContainer, err := sqlstore.New(ctx, "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", dbPath), logger)
+	// Use a single SQLite connection and enable WAL + busy timeout to reduce SQLITE_BUSY
+	// during the burst of concurrent writes that happens right after pairing/history sync.
+	dbDSN := fmt.Sprintf(
+		"file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)",
+		dbPath,
+	)
+	db, err := sql.Open("sqlite", dbDSN)
 	if err != nil {
+		log.Fatalf("failed to open sqlite store: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	defer db.Close()
+
+	storeContainer := sqlstore.NewWithDB(db, "sqlite3", logger)
+	if err := storeContainer.Upgrade(ctx); err != nil {
 		log.Fatalf("failed to init store: %v", err)
 	}
 
@@ -173,6 +193,12 @@ func main() {
 		if err != nil {
 			log.Printf("sendMessage: bad to=%q err=%v", req.To, err)
 			writeKO(w, http.StatusBadRequest, "bad to")
+			return
+		}
+
+		if strings.TrimSpace(req.Body.Text) == "" {
+			log.Printf("sendMessage: empty text body")
+			writeKO(w, http.StatusBadRequest, "empty text")
 			return
 		}
 
@@ -353,6 +379,11 @@ func (m *manager) newClient(ctx context.Context, storeContainer *sqlstore.Contai
 			cw.mu.Lock()
 			cw.ready = false
 			cw.mu.Unlock()
+		case *events.LoggedOut:
+			cw.mu.Lock()
+			cw.ready = false
+			cw.lastQR = ""
+			cw.mu.Unlock()
 		}
 	})
 
@@ -393,21 +424,29 @@ func (cw *clientWrap) ensureConnectedAndMaybeQR(ctx context.Context) {
 			}
 
 			for evt := range qrChan {
-				qrText := extractQRString(evt)
+				if evt.Event != whatsmeow.QRChannelEventCode {
+					cw.mu.Lock()
+					cw.lastQR = ""
+					cw.mu.Unlock()
+					log.Printf("[%s] QR channel finished with event=%s", cw.id, evt.Event)
+					continue
+				}
+
+				qrText := strings.TrimSpace(evt.Code)
+				if qrText == "" {
+					log.Printf("[%s] QR channel emitted empty code", cw.id)
+					continue
+				}
 
 				cw.mu.Lock()
 				cw.lastQR = qrText
 				cw.mu.Unlock()
 
-				if strings.TrimSpace(qrText) != "" {
-					log.Printf("[%s] QR updated", cw.id)
-					qrterminal.GenerateHalfBlock(qrText, qrterminal.L, os.Stdout)
-				} else {
-					log.Printf("[%s] QR event (unparsed): %v", cw.id, evt)
-				}
+				log.Printf("[%s] QR updated", cw.id)
+				qrterminal.GenerateHalfBlock(qrText, qrterminal.L, os.Stdout)
 
 				// Notify HA (only if changed)
-				if strings.TrimSpace(qrText) != "" && qrText != lastNotifiedQR {
+				if qrText != lastNotifiedQR {
 					lastNotifiedQR = qrText
 					if b64, err := qrPNGBase64(qrText, 256); err == nil {
 						msg := "Scan this QR with WhatsApp to pair:\n\n" +
@@ -466,37 +505,22 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 		return
 	}
 
-	u, err := url.Parse(req.Body.URL)
-	if err != nil || u.Scheme == "" {
-		log.Printf("send%s: bad url=%q err=%v", strings.Title(kind), req.Body.URL, err)
-		writeKO(w, http.StatusBadRequest, "bad url")
+	if strings.TrimSpace(req.Body.URL) == "" {
+		log.Printf("send%s: blank url", strings.Title(kind))
+		writeKO(w, http.StatusBadRequest, "blank url")
 		return
 	}
 
-	resp, err := http.Get(req.Body.URL) // #nosec G107
+	data, detectedMimeType, err := loadMediaSource(req.Body.URL)
 	if err != nil {
-		log.Printf("send%s: failed to fetch url=%q err=%v", strings.Title(kind), req.Body.URL, err)
+		log.Printf("send%s: failed to load source=%q err=%v", strings.Title(kind), req.Body.URL, err)
 		writeKO(w, http.StatusBadGateway, "fetch failed")
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("send%s: fetch url=%q returned status=%d", strings.Title(kind), req.Body.URL, resp.StatusCode)
-		writeKO(w, http.StatusBadGateway, fmt.Sprintf("upstream returned %d", resp.StatusCode))
-		return
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("send%s: read body failed err=%v", strings.Title(kind), err)
-		writeKO(w, http.StatusBadGateway, "read body failed")
 		return
 	}
 
 	mimeType := strings.TrimSpace(req.Body.MimeType)
 	if mimeType == "" {
-		mimeType = resp.Header.Get("Content-Type")
+		mimeType = detectedMimeType
 	}
 	if mimeType == "" {
 		mimeType = http.DetectContentType(data)
@@ -511,12 +535,31 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 		req.Body.FileName = "file" + ext
 	}
 
-	up, err := cw.cli.Upload(context.Background(), data, whatsmeow.MediaType(kind))
+	var mediaType whatsmeow.MediaType
+	switch kind {
+	case "image":
+		mediaType = whatsmeow.MediaImage
+	case "video":
+		mediaType = whatsmeow.MediaVideo
+	case "audio":
+		mediaType = whatsmeow.MediaAudio
+	case "document":
+		mediaType = whatsmeow.MediaDocument
+	default:
+		log.Printf("send%s: unsupported media kind=%q", strings.Title(kind), kind)
+		writeKO(w, http.StatusBadRequest, "unsupported media kind")
+		return
+	}
+
+	up, err := cw.cli.Upload(context.Background(), data, mediaType)
 	if err != nil {
 		log.Printf("send%s: upload failed err=%v", strings.Title(kind), err)
 		writeKO(w, http.StatusInternalServerError, "upload failed")
 		return
 	}
+
+	imageWidth, imageHeight := getImageDimensions(data)
+	audioSeconds := getAudioDurationSeconds(data, mimeType)
 
 	var msg *waProto.Message
 	switch kind {
@@ -526,11 +569,13 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 				URL:           proto.String(up.URL),
 				Mimetype:      proto.String(mimeType),
 				Caption:       proto.String(req.Body.Caption),
-				FileLength:    proto.Uint64(uint64(len(data))),
+				FileLength:    proto.Uint64(up.FileLength),
 				FileSHA256:    up.FileSHA256,
 				FileEncSHA256: up.FileEncSHA256,
 				MediaKey:      up.MediaKey,
 				DirectPath:    proto.String(up.DirectPath),
+				Width:         imageWidth,
+				Height:        imageHeight,
 			},
 		}
 	case "video":
@@ -539,7 +584,7 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 				URL:           proto.String(up.URL),
 				Mimetype:      proto.String(mimeType),
 				Caption:       proto.String(req.Body.Caption),
-				FileLength:    proto.Uint64(uint64(len(data))),
+				FileLength:    proto.Uint64(up.FileLength),
 				FileSHA256:    up.FileSHA256,
 				FileEncSHA256: up.FileEncSHA256,
 				MediaKey:      up.MediaKey,
@@ -551,7 +596,8 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 			AudioMessage: &waProto.AudioMessage{
 				URL:           proto.String(up.URL),
 				Mimetype:      proto.String(mimeType),
-				FileLength:    proto.Uint64(uint64(len(data))),
+				FileLength:    proto.Uint64(up.FileLength),
+				Seconds:       audioSeconds,
 				FileSHA256:    up.FileSHA256,
 				FileEncSHA256: up.FileEncSHA256,
 				MediaKey:      up.MediaKey,
@@ -571,7 +617,7 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 				Title:         proto.String(fn),
 				FileName:      proto.String(fn),
 				Caption:       proto.String(req.Body.Caption),
-				FileLength:    proto.Uint64(uint64(len(data))),
+				FileLength:    proto.Uint64(up.FileLength),
 				FileSHA256:    up.FileSHA256,
 				FileEncSHA256: up.FileEncSHA256,
 				MediaKey:      up.MediaKey,
@@ -590,6 +636,124 @@ func handleMedia(w http.ResponseWriter, r *http.Request, m *manager, kind string
 	}
 
 	_, _ = w.Write([]byte(statusOk))
+}
+
+func loadMediaSource(source string) ([]byte, string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return nil, "", fmt.Errorf("empty media source")
+	}
+
+	u, err := url.Parse(source)
+	if err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		resp, err := http.Get(source) // #nosec G107
+		if err != nil {
+			return nil, "", err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, "", fmt.Errorf("upstream returned %d", resp.StatusCode)
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", err
+		}
+		return data, resp.Header.Get("Content-Type"), nil
+	}
+	if err == nil && u.Scheme != "" {
+		return nil, "", fmt.Errorf("unsupported media source scheme %q", u.Scheme)
+	}
+
+	filePath, err := resolveLocalMediaPath(source)
+	if err != nil {
+		return nil, "", err
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return data, mime.TypeByExtension(strings.ToLower(filepath.Ext(filePath))), nil
+}
+
+func resolveLocalMediaPath(source string) (string, error) {
+	switch {
+	case strings.HasPrefix(source, "/local/"):
+		return safeJoinLocalPath("/config/www", strings.TrimPrefix(source, "/local/"))
+	case source == "/config/www" || strings.HasPrefix(source, "/config/www/"):
+		return safeAbsoluteLocalPath(source, "/config/www")
+	case source == "/media" || strings.HasPrefix(source, "/media/"):
+		return safeAbsoluteLocalPath(source, "/media")
+	default:
+		return "", fmt.Errorf("unsupported local media path %q", source)
+	}
+}
+
+func safeJoinLocalPath(root, relative string) (string, error) {
+	return safeAbsoluteLocalPath(filepath.Join(root, relative), root)
+}
+
+func safeAbsoluteLocalPath(pathToCheck, root string) (string, error) {
+	cleanRoot := filepath.Clean(root)
+	cleanPath := filepath.Clean(pathToCheck)
+	if cleanPath != cleanRoot && !strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path %q escapes allowed root %q", pathToCheck, root)
+	}
+	return cleanPath, nil
+}
+
+func getImageDimensions(data []byte) (*uint32, *uint32) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, nil
+	}
+
+	width := uint32(cfg.Width)
+	height := uint32(cfg.Height)
+	return &width, &height
+}
+
+func getAudioDurationSeconds(data []byte, mimeType string) *uint32 {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+
+	switch {
+	case mimeType == "audio/mpeg", mimeType == "audio/mp3":
+		decoder, err := mp3.NewDecoder(bytes.NewReader(data))
+		if err != nil {
+			return nil
+		}
+		length := decoder.Length()
+		sampleRate := decoder.SampleRate()
+		if length <= 0 || sampleRate <= 0 {
+			return nil
+		}
+		// go-mp3 decodes to 16-bit stereo PCM: 4 bytes per sample frame.
+		seconds := uint32(length / 4 / int64(sampleRate))
+		if seconds == 0 {
+			seconds = 1
+		}
+		return &seconds
+	case mimeType == "audio/ogg", mimeType == "audio/vorbis":
+		reader, err := oggvorbis.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return nil
+		}
+		length := reader.Length()
+		sampleRate := reader.SampleRate()
+		if length <= 0 || sampleRate <= 0 {
+			return nil
+		}
+		seconds := uint32(length / int64(sampleRate))
+		if seconds == 0 {
+			seconds = 1
+		}
+		return &seconds
+	default:
+		return nil
+	}
 }
 
 func parseJID(to string) (types.JID, error) {
@@ -612,31 +776,6 @@ func parseJID(to string) (types.JID, error) {
 	return types.ParseJID(to + "@s.whatsapp.net")
 }
 
-func extractQRString(qrEvt any) string {
-	v := reflect.ValueOf(qrEvt)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		if s, ok := qrEvt.(string); ok {
-			return s
-		}
-		return fmt.Sprintf("%v", qrEvt)
-	}
-
-	for _, name := range []string{"Code", "QR", "Data"} {
-		f := v.FieldByName(name)
-		if f.IsValid() && f.Kind() == reflect.String {
-			s := f.String()
-			if strings.TrimSpace(s) != "" {
-				return s
-			}
-		}
-	}
-
-	return fmt.Sprintf("%v", qrEvt)
-}
-
 func qrPNGBase64(qrText string, _ int) (string, error) {
 	if strings.TrimSpace(qrText) == "" {
 		return "", fmt.Errorf("empty qr text")
@@ -647,10 +786,7 @@ func qrPNGBase64(qrText string, _ int) (string, error) {
 		return "", err
 	}
 
-	pngBytes, err := code.PNG()
-	if err != nil {
-		return "", err
-	}
+	pngBytes := code.PNG()
 
 	return base64.StdEncoding.EncodeToString(pngBytes), nil
 }

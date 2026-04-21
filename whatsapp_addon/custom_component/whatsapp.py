@@ -1,6 +1,7 @@
 import requests
 from url_normalize import url_normalize
 
+
 class WhatsappRequestError(Exception):
     def __init__(self, path, status_code, body_text):
         self.path = path
@@ -8,15 +9,33 @@ class WhatsappRequestError(Exception):
         self.body_text = body_text
         super().__init__(f"POST {path} failed: status={status_code} body={body_text!r}")
 
+
 class Whatsapp:
-    def __init__(self, host="127.0.0.1", port=3000):
-        self._base = f"http://{host}:{port}"
+    def __init__(self, host="{{HOSTNAME}}", port=3000):
+        self._port = port
+        self._hosts = []
+        for candidate in (host, "{{HOSTNAME}}", "localhost", "127.0.0.1"):
+            candidate = (candidate or "").strip()
+            if candidate and candidate not in self._hosts:
+                self._hosts.append(candidate)
 
     def _post_ok(self, path, data):
-        r = requests.post(url_normalize(f"{self._base}{path}"), json=data, timeout=60)
-        if r.content == b"OK":
-            return True
-        raise WhatsappRequestError(path, r.status_code, r.text.strip())
+        last_error = None
+        for host in self._hosts:
+            base = f"http://{host}:{self._port}"
+            try:
+                r = requests.post(url_normalize(f"{base}{path}"), json=data, timeout=60)
+            except requests.RequestException as err:
+                last_error = err
+                continue
+
+            if r.content == b"OK":
+                return True
+            raise WhatsappRequestError(path, r.status_code, r.text.strip())
+
+        if last_error is not None:
+            raise last_error
+        raise WhatsappRequestError(path, 503, "no backend hosts available")
 
     def send_message(self, data):
         return self._post_ok("/sendMessage", data)

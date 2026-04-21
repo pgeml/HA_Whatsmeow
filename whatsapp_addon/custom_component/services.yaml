@@ -23,7 +23,7 @@ send_message:
 
 send_image:
   name: Send image
-  description: Send an image from a remote URL
+  description: Send an image from a remote URL or Home Assistant local media path
   fields:
     clientId:
       required: true
@@ -35,13 +35,13 @@ send_image:
       required: true
       advanced: true
       example:
-        url: "https://example.com/image.jpg"
+        url: "/media/example.jpg"
         caption: "Hello"
         mimeType: "image/jpeg"
 
 send_video:
   name: Send video
-  description: Send a video from a remote URL
+  description: Send a video from a remote URL or Home Assistant local media path
   fields:
     clientId:
       required: true
@@ -53,13 +53,13 @@ send_video:
       required: true
       advanced: true
       example:
-        url: "https://example.com/video.mp4"
+        url: "/media/example.mp4"
         caption: "Hello"
         mimeType: "video/mp4"
 
 send_document:
   name: Send document
-  description: Send a document from a remote URL
+  description: Send a document from a remote URL or Home Assistant local media path
   fields:
     clientId:
       required: true
@@ -71,14 +71,14 @@ send_document:
       required: true
       advanced: true
       example:
-        url: "https://example.com/file.pdf"
+        url: "/media/file.pdf"
         fileName: "file.pdf"
         caption: "FYI"
         mimeType: "application/pdf"
 
 send_audio:
   name: Send audio
-  description: Send audio from a remote URL (set ptt=true for a voice note)
+  description: Send audio from a remote URL or Home Assistant local media path (set ptt=true for a voice note)
   fields:
     clientId:
       required: true
@@ -90,6 +90,6 @@ send_audio:
       required: true
       advanced: true
       example:
-        url: "https://example.com/audio.ogg"
+        url: "/media/example.ogg"
         ptt: true
         mimeType: "audio/ogg"
