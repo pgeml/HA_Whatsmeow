@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -25,12 +25,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mdp/qrterminal/v3"
 	"github.com/hajimehoshi/go-mp3"
 	"github.com/jfreymuth/oggvorbis"
+	"github.com/mdp/qrterminal/v3"
 	rscqr "rsc.io/qr"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -46,9 +47,25 @@ import (
 )
 
 const (
-	statusOk = "OK"
-	statusKo = "KO"
+	statusOk              = "OK"
+	statusKo              = "KO"
+	versionRefreshTimeout = 15 * time.Second
 )
+
+func refreshWhatsAppWebVersion(ctx context.Context) {
+	previousVersion := store.GetWAVersion()
+	refreshCtx, cancel := context.WithTimeout(ctx, versionRefreshTimeout)
+	defer cancel()
+
+	latestVersion, err := whatsmeow.GetLatestVersion(refreshCtx, &http.Client{Timeout: versionRefreshTimeout})
+	if err != nil {
+		log.Printf("WARNING: failed to refresh WhatsApp Web client version: %v; using bundled fallback version %s", err, previousVersion.String())
+		return
+	}
+
+	store.SetWAVersion(*latestVersion)
+	log.Printf("refreshed WhatsApp Web client version: %s -> %s", previousVersion.String(), latestVersion.String())
+}
 
 func writeKO(w http.ResponseWriter, status int, reason string) {
 	w.WriteHeader(status)
@@ -118,6 +135,7 @@ func main() {
 	defer cancel()
 
 	logger := waLog.Stdout("whatsapp-addon", "INFO", true)
+	refreshWhatsAppWebVersion(ctx)
 
 	// Whatsmeow store (SQLite, pure-go).
 	// Prefer STORE_PATH from the add-on run script, but keep WHATSAPP_DB for compatibility.
